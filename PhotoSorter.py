@@ -2,7 +2,7 @@
 """
 Copyright (C) 2005-2012 Jinsong Ren
 
-For documentation of the project, please go to:
+For documentations of the project, please go to:
 http://osjren.github.com/PhotoSorter
 
 For bugfixes, updates and support, please go to:
@@ -95,6 +95,14 @@ along with PhotoSorter.  If not, see <http://www.gnu.org/licenses/>.
 #   2011.12.07 - Added: can overwrite target encoded video files.
 #   2012.04.12 - v2.5.4. Added MIT license terms. Updated EXIF.py to v1.09
 #   2012.04.19 - Changed the license to GPL to support the free software movement
+#   2012.04.21 - Changed the startup file name
+#                fixed: repeated current dir in output dir list
+#                Added: 'q' to quit
+#                Added: disable video transcoding if video codec is not detected
+#   2012.04.22 - v2.5.5
+#                Added: write-permission test for the log file
+#                Added: more options for user config
+#                Changed: seperate func to load config file. 
 #
 # Note:
 #   Use python v2.4. "os.walk()" is available only after v2.4.
@@ -106,7 +114,7 @@ import EXIF
 
 from os.path import join, getsize, split, splitext, getatime, getmtime, getctime, exists
 
-global Opt, UsrCfg, GDirInfo, GFileInfo, GVideoBinDir
+global Opt, Cfg, GDirInfo, GFileInfo, GVideoBinDir
 
 GDirInfo = None
 GFileInfo = None
@@ -121,19 +129,23 @@ class UsrCfgClass:
     def __init__(self):
         self.Verbosity = 0
 
-        self.StartupFname = 'PhotoSorter-startup.py'
+        self.ConfigFname = 'PhotoSorter-config.py'
+        self.LogFname = 'PhotoSorter-log.txt'
+        self.LoggingOn = True
 
         self.VideoDir = 'video' #sub-dir to store video files
         self.VideoBinDir = '#videobin'
 
-        self.FFMpegCmd = 'ffmpeg'
-        self.DefaultInputDir = '/home/samba/share/sto-alb/tosort'
+        self.VCodecCmd = 'ffmpeg'
+        self.VTranscodOn = True
+        
+        self.DefaultInputDir = '.'
         self.InputDir = self.DefaultInputDir
         self.OutputDir = self.InputDir
+        self.InputDirs = [self.InputDir]
+        self.OutputDirs = [self.OutputDir]
         self.ProcessingSequence = 'None' #'None', 'PhotosFirst', 'PhotosOnly'
-        self.CreateDateSubDir = 1 #Create date sub-dir and move files there
-
-
+        
         #self.VQuality = 'sameq' #Q8
         self.VEncExt2 = ''
         self.VEncExt = ''
@@ -161,19 +173,15 @@ class UsrCfgClass:
         self.VEncCExt = self.VEncExt2 + self.VEncExt
 
 
-UsrCfg = UsrCfgClass()
+Cfg = UsrCfgClass()
 
 class OptClass:
     """Define Global options"""
     def __init__(self):
         self.AppName = 'Photo Sorter'
-        self.AppVer = '2.5.4'
+        self.AppVer = '2.5.5'
         self.AppCopyright = '(C) J Ren'
         self.AppYear = '2005-2012'
-
-        #self.StartUpScript = 'startup/startup.py'
-        #self.UserCfgDir = 'cfg'
-        #self.LibDir = 'lib';
 
         self.Prompt1 = '==='
         self.Prompt2 = '---'
@@ -211,7 +219,12 @@ FuncNo = FuncNoClass()
 
 #=======================================================
 def main():
-    global Opt, UsrCfg, GVideoBinDir
+    """=========================================================================
+    Return: error code
+      0: success
+      1: user aborted
+    ========================================================================="""
+    global Opt, Cfg, GVideoBinDir
 
     """args = GetCmdLineArgs()
     if args != 0:
@@ -221,15 +234,8 @@ def main():
         return"""
 
     print(' ')
-    print(Opt.Prompt1 + ' ' + Opt.AppName + ' ' + Opt.AppVer)
+    print(' '.join([Opt.Prompt1, Opt.AppName, Opt.AppVer, Opt.AppCopyright, Opt.AppYear]))
     Opt.ExePath, Opt.ExeName = os.path.split(os.path.abspath(sys.argv[0]))
-
-
-    """for m in range(0, len(Cfg.FuncCfgFile)):
-        fullFuncFname = JoinFilePath(Cfg.FuncCfgDir, Cfg.FuncCfgFile[m])
-        if exists(fullFuncFname):
-            execfile(fullFuncFname)
-            """
 
     print('Function list:')
     print('   0-Auto;')
@@ -243,7 +249,7 @@ def main():
     print('   8-Sync THM filename to the video filename in video dirs;')
     print('   9-Move files to dated directories;')
     print('   10-Auto but overwrite existing destination transcoded video files;')
-    print('   (Seperate multiple actions by comma)')
+    print('   (Seperate multiple functions by comma. Enter \"q\" to quit at any time)')
 
     while True:
         ques = 'Which function [0]'
@@ -257,6 +263,8 @@ def main():
         wrongAns = False
         for aAns in ans:
             try:
+                if aAns == 'q': #quit
+                    return
                 progFunc = eval(aAns)
             except:
                 print(Opt.ErrorPrompt + 'Error! function number must be a number!')
@@ -276,53 +284,58 @@ def main():
         else:
             break
 
-    #Load external dir shortcuts:
-    IDirShortcuts = {}
-    IDirShortcuts['input'] = []
-    IDirShortcuts['output'] = []
-    startupFname = join(os.getcwd(), UsrCfg.StartupFname)
-    if exists(startupFname):
-        execfile(startupFname)
-    if len(IDirShortcuts['input']) == 0:
-        IDirShortcuts['input'] = [UsrCfg.InputDir]
-    if len(IDirShortcuts['output']) == 0:
-        IDirShortcuts['output'] = [UsrCfg.OutputDir]
-
-    UsrCfg.InputDir = AskDir('Input dir (0-9 or path)[0]' + Opt.InputPrompt, IDirShortcuts['input'])
-
+    #Load external user config file:
+    configFname = join(os.getcwd(), Cfg.ConfigFname)
+    LoadConfigFile(configFname)
+        
+    Cfg.InputDir = AskDir('Input dir (0-9 or path)[0]' + Opt.InputPrompt, Cfg.InputDirs)
+    if Cfg.InputDir is None:
+        return 1
+    
     #add the input dir to the shortcuts:
-    if UsrCfg.InputDir in IDirShortcuts['output']:
-        IDirShortcuts['output'].remove(UsrCfg.InputDir)
-    IDirShortcuts['output'].insert(0, UsrCfg.InputDir)
+    if Cfg.InputDir in Cfg.OutputDirs:
+        Cfg.OutputDirs.remove(Cfg.InputDir)
+    Cfg.OutputDirs.insert(0, Cfg.InputDir)
 
-    UsrCfg.OutputDir = AskDir('Output dir (0-9 or path)[0=same as input]' + Opt.InputPrompt, IDirShortcuts['output'])
-    GVideoBinDir = join(UsrCfg.InputDir, UsrCfg.VideoBinDir)
+    Cfg.OutputDir = AskDir('Output dir (0-9 or path)[0=same as input]' + Opt.InputPrompt, Cfg.OutputDirs)
+    if Cfg.OutputDir is None:
+        return 1
+    GVideoBinDir = join(Cfg.InputDir, Cfg.VideoBinDir)
 
-    print(Opt.Prompt1 + ' Input dir:  ' + UsrCfg.InputDir)
-    print(Opt.Prompt1 + ' Output dir: ' + UsrCfg.OutputDir)
+    print(Opt.Prompt1 + ' Input dir:  ' + Cfg.InputDir)
+    print(Opt.Prompt1 + ' Output dir: ' + Cfg.OutputDir)
     ques = 'Start processing? [y]'
     ans = raw_input(ques + Opt.InputPrompt)
     if len(ans) <= 0:
         ans = 'y'
     if ans == 'y':
         pass
-    else:
-        print(Opt.Prompt1 + " User aborted.")              
-        sys.exit(0)
+    else:           
+        return 1
 
     #Set up log files:    
-    #logFname = join(UsrCfg.OutputDir, 'photosorter-log.txt')
+    #logFname = join(Cfg.OutputDir, 'photosorter-log.txt')
     #args = GetCmdLineArgs()
     #if args != None:
         #logFname = join(args['AppPath'], 'photosorter-log.txt')
     #else:
         #print(Opt.ErrorPrompt + ' Error: AppPath is None')
         #exit(1)
-    logFname = join(os.getcwd(), 'photosorter-log.txt')
-    if exists(logFname):
-        os.remove(logFname)
-    MyStdout = StandOut(filename=logFname)
-    MyStderr = StandOut(stream='error', share=True) #anything printed to sys.stderr goes to the stdout file as well 
+    if Cfg.LoggingOn:
+        logFname = join(os.getcwd(), Cfg.LogFname)
+        try: #write-permission test
+            logf = open(logFname, "w")
+            #logf.write('PhotoSorter Log File')
+        except IOError as exc:
+            Cfg.LoggingOn = False
+            print(Opt.ErrorPrompt + ' Unable to write to log file \"{}\". {}'.format(logFname, exc[1]))
+            print(Opt.AttnPrompt + ' Logging disabled')
+        else:
+            logf.close()
+            #if exists(logFname):
+                #os.remove(logFname)
+            MyStdout = StandOut(filename=logFname)
+            MyStderr = StandOut(stream='error', share=True) #anything printed to sys.stderr goes to the stdout file as well 
 
     print('')
     PrintAppHeader(Opt.AppName, Opt.AppVer, Opt.AppCopyright, Opt.AppYear)
@@ -330,17 +343,17 @@ def main():
 
     for progFunc in progFuncs:
         if progFunc == FuncNo.AutoOverwrite:
-            UsrCfg.VidOverwriteOn = True
+            Cfg.VidOverwriteOn = True
             progFunc = FuncNo.Auto
         elif progFunc == FuncNo.Auto:
-            UsrCfg.VidOverwriteOn = False
+            Cfg.VidOverwriteOn = False
         
         skipDatedDir = True        
         if (progFunc == FuncNo.EncodeVidAllDirs):
             skipDatedDir = False    
 
         if (progFunc == FuncNo.JpgExtToThm) or (progFunc == FuncNo.Auto):
-            count = ProcRenameMovJpgPair(UsrCfg.InputDir)
+            count = ProcRenameMovJpgPair(Cfg.InputDir)
             print('')
             print('------------------------------------------------')
             print(Opt.Prompt1 + ' ProcRenameMovJpgPair:')
@@ -352,7 +365,7 @@ def main():
 
         if (progFunc == FuncNo.SyncVidFnames):
             targetCExts = ['.mp4.mkv', '.xvd.avi', '.dvx.avi', '.avi', '.mov']
-            count, redundantCnt, multiTargetsCnt, errCnt = ProcSyncVideoFnames(UsrCfg.InputDir, UsrCfg.VEncCExt, targetCExts, ssAddNewCommentOnly)
+            count, redundantCnt, multiTargetsCnt, errCnt = ProcSyncVideoFnames(Cfg.InputDir, Cfg.VEncCExt, targetCExts, ssAddNewCommentOnly)
             print('')
             print('------------------------------------------------')
             print(Opt.Prompt1 + ' ProcSyncVideoFnames:')
@@ -367,7 +380,7 @@ def main():
         if (progFunc == FuncNo.BinOldVidFiles):
             encodedVidCExts = ['.h24.mkv', '.mp4.mkv', '.xvd.avi', '.dvx.avi']
             origVidCExts = ['.avi', '.mov']
-            processedCnt, existTargetsCnt, conflictsCnt, newCommentCnt, errCnt = ProcBinRedundantVideoFiles(UsrCfg.InputDir, encodedVidCExts, origVidCExts)
+            processedCnt, existTargetsCnt, conflictsCnt, newCommentCnt, errCnt = ProcBinRedundantVideoFiles(Cfg.InputDir, encodedVidCExts, origVidCExts)
             print('')
             print('------------------------------------------------')
             print(Opt.Prompt1 + ' ProcBinRedundantVideoFiles:')
@@ -382,7 +395,7 @@ def main():
 
         if (progFunc == FuncNo.SyncThmFnames):
             targetCExts = ['.h24.mkv', '.mp4.mkv', '.xvd.avi', '.dvx.avi', '.avi', '.mov']
-            count, redundantCnt, multiTargetsCnt, errCnt = ProcSyncVideoFnames(UsrCfg.InputDir, UsrCfg.ThmCExt, targetCExts, ssSyncToLatestComment)
+            count, redundantCnt, multiTargetsCnt, errCnt = ProcSyncVideoFnames(Cfg.InputDir, Cfg.ThmCExt, targetCExts, ssSyncToLatestComment)
             print('')
             print('------------------------------------------------')
             print(Opt.Prompt1 + ' ProcSyncVideoFnames:')
@@ -395,20 +408,27 @@ def main():
             continue
 
         #progFunc == Auto or the rest:
-        if (UsrCfg.ProcessingSequence == 'PhotosFirst') or (UsrCfg.ProcessingSequence == 'PhotosOnly'): #Process photos first
-            count, results = ProcessFiles(progFunc, UsrCfg.InputDir, UsrCfg.OutputDir, FileType='.jpg', ASkipDatedDir=skipDatedDir)
+        if (Cfg.ProcessingSequence == 'PhotosFirst') or (Cfg.ProcessingSequence == 'PhotosOnly'): #Process photos first
+            count, results = ProcessFiles(progFunc, Cfg.InputDir, Cfg.OutputDir, FileType='.jpg', ASkipDatedDir=skipDatedDir)
             PrintResultCnt(count, results)
 
-        if UsrCfg.ProcessingSequence != 'PhotosOnly':
-            count, results = ProcessFiles(progFunc, UsrCfg.InputDir, UsrCfg.OutputDir, FileType=None, ASkipDatedDir=skipDatedDir) #Process all files
+        if Cfg.ProcessingSequence != 'PhotosOnly':
+            count, results = ProcessFiles(progFunc, Cfg.InputDir, Cfg.OutputDir, FileType=None, ASkipDatedDir=skipDatedDir) #Process all files
             PrintResultCnt(count, results)
 
     PrintAppFooter(Opt.AppName, Opt.AppVer, Opt.AppCopyright, Opt.AppYear)
-    MyStdout.close()
-    MyStderr.close()
+    if Cfg.LoggingOn:
+        MyStdout.close()
+        MyStderr.close()
+        print(Opt.Prompt1 + ' Messages logged to \"{}\"'.format(Cfg.LogFname))
+
+    return 0
 
 
 def PrintResultCnt(count=0, results=None):
+    """=========================================================================
+    Print the counts of the number of files being processed
+    ========================================================================="""
     print ('')
     print(Opt.Prompt1 + ' %i files processed in total.'  % (count))
 
@@ -426,7 +446,7 @@ def PrintResultCnt(count=0, results=None):
         print('------------------------------------------------')
         print(Opt.Prompt1 + ' FnEncodeVideo:')
         print(Opt.Prompt1 + ' %i video files transcoded.'  % (results['FnEncodeVideo'][0]))
-        if UsrCfg.VidOverwriteOn:
+        if Cfg.VidOverwriteOn:
             print(Opt.Prompt1 + ' %i existing target files to be overwritten.'  % (results['FnEncodeVideo'][1]))
         else:
             print(Opt.Prompt1 + ' %i existing target files skipped.'  % (results['FnEncodeVideo'][1]))
@@ -435,7 +455,7 @@ def PrintResultCnt(count=0, results=None):
         print('------------------------------------------------')
         print(Opt.Prompt1 + ' FnMoveToDatedDir:')
         print(Opt.Prompt1 + ' %i files moved to dated dirs.'  % (results['FnMoveToDatedDir'][0]))
-        if UsrCfg.VidOverwriteOn:
+        if Cfg.VidOverwriteOn:
             print(Opt.Prompt1 + ' %i existing target files overwritten.'  % (results['FnMoveToDatedDir'][1]))
         else:
             print(Opt.Prompt1 + ' %i existing target files skipped.'  % (results['FnMoveToDatedDir'][1]))
@@ -502,6 +522,7 @@ def GetCmdLineArgs():
 def AskDir(APrompt='Which dir? ', ADefaults=['']):
     """=========================================================================
     Return: the dir answered
+        None: if 'q' command received to indicate 'quit'
     Parameters:
         ADefaults: list of default dirs
     ========================================================================="""
@@ -516,14 +537,16 @@ def AskDir(APrompt='Which dir? ', ADefaults=['']):
         inputDir = raw_input(APrompt)
         if len(inputDir) == 0: #use the first default
             inputDir = ADefaults[0]
-        elif len(inputDir) == 1: #check if it should use defaults
+        elif len(inputDir) <= 2: #check if it should use defaults
             if inputDir.isdigit(): #use default
                 if int(inputDir) < maxIdx:
                     inputDir = ADefaults[int(inputDir)]
                 else:
                     print(Opt.ErrorPrompt + ' Shortcut number out of range. Try again.')
                     continue
-            else: #user input
+            elif inputDir == 'q': #quit
+                return None
+            else: #ignore unknown input
                 pass
         else: #user input
             pass
@@ -538,7 +561,9 @@ def AskDir(APrompt='Which dir? ', ADefaults=['']):
             ans1 = raw_input('Is the dir \"' + inputDir + '\" correct [y]' + Opt.InputPrompt)
             if ((len(ans1) == 0) or (ans1.lower() == "y") or (ans1.lower() == "yes")):
                 pass
-            else:
+            elif ans1 == 'q': #quit
+                return None
+            else: #ignore unknown input
                 print("");
                 continue
         else:
@@ -548,7 +573,37 @@ def AskDir(APrompt='Which dir? ', ADefaults=['']):
         print(' ')
         return inputDir
 
+    
+def LoadConfigFile(AFname=None):
+    """=========================================================================
+    Load config file and merge settings into cfg
+    
+    ========================================================================="""
+    global Cfg
+    
+    if AFname is None:
+        return
+    UserConfig = {}
+    if exists(AFname):
+        execfile(AFname)
 
+    if UserConfig.has_key('InputDirs'):
+        Cfg.InputDirs = [FormatFilePath(x) for x in UserConfig['InputDirs']]
+    if UserConfig.has_key('OutputDirs'):
+        Cfg.OutputDirs = [FormatFilePath(x) for x in UserConfig['OutputDirs']]
+        
+    if UserConfig.has_key('EnableVideoTranscoding'):
+        Cfg.VTranscodOn = UserConfig['EnableVideoTranscoding']
+    if Cfg.VTranscodOn:
+        if not DetectVCodec(Cfg.VCodecCmd):
+            Cfg.VTranscodOn = False
+            print(Opt.AttnPrompt + ' Video codec not found. Video transcoding disabled')
+    else:
+        print(Opt.Prompt1 + ' Video transcoding is not enabled')
+        
+    if UserConfig.has_key('EnableLogging'):
+        Cfg.LoggingOn = UserConfig['EnableLogging']
+    
 
 def GetFnameComponents(Fname=None):
     """=========================================================================
@@ -577,9 +632,9 @@ def GetFnameComponents(Fname=None):
         path, fname = split(Fname)
         base, ext = splitext(fname)
         base2, ext2 = splitext(base)
-        parts = base2.split(UsrCfg.FnameStemSep)
+        parts = base2.split(Cfg.FnameStemSep)
         if len(parts) >= 2:
-            stem = parts[0] + UsrCfg.FnameStemSep + parts[1]
+            stem = parts[0] + Cfg.FnameStemSep + parts[1]
         else:
             stem = base2
 
@@ -605,7 +660,7 @@ def ProcRenameMovJpgPair(InputDir=None):
     if (InputDir == None):
         return 0
     for root, dirs, files in os.walk(InputDir):
-        if UsrCfg.Verbosity >= 1:
+        if Cfg.Verbosity >= 1:
             print Opt.Prompt1, 'Directory \"' + root + '\\\"',
             print 'contains', len(files), "non-directory files."
             print ' '
@@ -838,7 +893,7 @@ def FnAddDatePrefix(ARoot, Fname):
     curDir = split(ARoot)[1]
 
     if IsValidExt(ext) \
-       and not( (curDir == UsrCfg.VideoDir) and IsDateDir(parentDir) ): #don't dig into special dir
+       and not( (curDir == Cfg.VideoDir) and IsDateDir(parentDir) ): #don't dig into special dir
         if len(datePrefix) > 0: #date prefix exists    
             PrintFileInfo()
             print Opt.Prompt3, 'Date prefix already exists. Skip.'
@@ -929,8 +984,8 @@ def FnMoveToDatedDir(ARoot, Fname, AOutputDir, AVideoBinDirFull, AFileAccessTime
             PrintFileInfo()
             print(Opt.Prompt3 + (' Redundant original file: \"') + origFile + '\"')
 
-            if ARoot.find(UsrCfg.VideoBinDir) >= 0: #if under #video dir, then don't move
-                print(Opt.Prompt3 + ' Already in dir ' + UsrCfg.VideoBinDir + '. No need to move. Skip.')
+            if ARoot.find(Cfg.VideoBinDir) >= 0: #if under #video dir, then don't move
+                print(Opt.Prompt3 + ' Already in dir ' + Cfg.VideoBinDir + '. No need to move. Skip.')
             else:
                 fullname = join(ARoot, origFile)
                 if not exists(fullname):
@@ -971,7 +1026,7 @@ def GetTargetDir(ACurDir, ADatePrefix, AIsVideo):
     Example:
       RTargetDir, RDifferent = GetVideoFileTargetDir(subDir)
     ========================================================================="""
-    global UsrCfg
+    global Cfg
 
     dirParts = split(ACurDir)
     curDir = dirParts[1]
@@ -982,17 +1037,17 @@ def GetTargetDir(ACurDir, ADatePrefix, AIsVideo):
 
     if AIsVideo: #For video files      
         if (len(parentDir) >= 8) and (parentDir[0:8] == ADatePrefix): #parent dir like: 20110403
-            if curDir == UsrCfg.VideoDir: #in dir like: 20110403/video
+            if curDir == Cfg.VideoDir: #in dir like: 20110403/video
                 RTargetDir = ACurDir
                 RDifferent = False
             else: #like 051029\xyz\fname.avi
-                RTargetDir = join(parentPath, UsrCfg.VideoDir)
+                RTargetDir = join(parentPath, Cfg.VideoDir)
                 RDifferent = True
         elif (len(curDir) >= 8) and (curDir[0:8] == ADatePrefix):
-            RTargetDir = join(ACurDir, UsrCfg.VideoDir)
+            RTargetDir = join(ACurDir, Cfg.VideoDir)
             RDifferent = True
         else:
-            RTargetDir = join(ACurDir, ADatePrefix, UsrCfg.VideoDir)
+            RTargetDir = join(ACurDir, ADatePrefix, Cfg.VideoDir)
             RDifferent = True
 
     else: #For image files
@@ -1009,7 +1064,7 @@ def GetRealVideoDirFname(AVidDirFull, AVidFname, AFnameStem, ADatePrefix, ACExt)
     """=========================================================================
     Search for the video dir where the video file's thm file resides
     ========================================================================="""
-    global UsrCfg
+    global Cfg
 
     RVidDir = AVidDirFull
     RVidFname = AVidFname
@@ -1021,13 +1076,13 @@ def GetRealVideoDirFname(AVidDirFull, AVidFname, AFnameStem, ADatePrefix, ACExt)
     parentDir = parentParts[1]
     parentRoot = parentParts[0]
 
-    if (curDir == UsrCfg.VideoDir) and (len(parentDir) >= 8) and (parentDir[0:8] == ADatePrefix): #find new dir/fname only when the path is the right type
+    if (curDir == Cfg.VideoDir) and (len(parentDir) >= 8) and (parentDir[0:8] == ADatePrefix): #find new dir/fname only when the path is the right type
         candidateVFnames = []
         items = os.listdir(parentRoot)
         for aItem in items:
             if os.path.isdir(join(parentRoot, aItem)):
                 if (len(aItem) >= 8) and (aItem[0:8] == ADatePrefix):
-                    newDir = join(parentRoot, aItem, UsrCfg.VideoDir)
+                    newDir = join(parentRoot, aItem, Cfg.VideoDir)
                     if exists(newDir):
                         finalVidDir = ''
                         finalVidFnames = []
@@ -1036,9 +1091,9 @@ def GetRealVideoDirFname(AVidDirFull, AVidFname, AFnameStem, ADatePrefix, ACExt)
                             if aItem2.find(AFnameStem) >= 0:
                                 if (len(aItem2) >= 8) and (os.path.isfile(join(newDir, aItem2))): #make sure file name have at least 8 chars
                                     cext = aItem2[-8:].lower()
-                                    if (cext == UsrCfg.ThmCExt.lower()) and (not finalVidDir): 
+                                    if (cext == Cfg.ThmCExt.lower()) and (not finalVidDir): 
                                         finalVidDir = newDir #the 1st dir with the thm is the dest dir
-                                    elif (cext == UsrCfg.VEncCExt.lower()) and (len(aItem2[:-8]) > len(AFnameStem)): #fname with comment
+                                    elif (cext == Cfg.VEncCExt.lower()) and (len(aItem2[:-8]) > len(AFnameStem)): #fname with comment
                                         if aItem2 != AVidFname: #different comment from the default
                                             finalVidFnames.append(aItem2) #only record fnames with comment and different from the default
                         #end for aItem2
@@ -1073,13 +1128,13 @@ def MoveToDatedDirSingle(ARoot, Fname, AOutputDir, AFileAccessTime, AFileModTime
     Example:
       name, processed = MoveToDatedDirSingle(root, name, processed, fInfo)
     ========================================================================="""
-    global UsrCfg
+    global Cfg
 
     RMovedCnt = 0
     RExistingTgtCnt = 0
     RErrCnt = 0
 
-    subDir = ARoot[ARoot.find(UsrCfg.InputDir) + len(UsrCfg.InputDir):]
+    subDir = ARoot[ARoot.find(Cfg.InputDir) + len(Cfg.InputDir):]
     fullname = join(ARoot, Fname)
 
     if not exists(fullname):
@@ -1095,12 +1150,12 @@ def MoveToDatedDirSingle(ARoot, Fname, AOutputDir, AFileAccessTime, AFileModTime
     extLo = ext.lower()
     ext2Lo = ext2.lower()
     cextLo = ext2Lo + extLo
-    if (extLo in UsrCfg.VidFileExts) and not (ext2Lo in UsrCfg.TmpVidFileExt2s):
+    if (extLo in Cfg.VidFileExts) and not (ext2Lo in Cfg.TmpVidFileExt2s):
         isVideo = True
-    if (cextLo in UsrCfg.VidCompanionFileCExts): #xx.thm.jpg is moved to video dir
+    if (cextLo in Cfg.VidCompanionFileCExts): #xx.thm.jpg is moved to video dir
         isVideoCompanion = True
         isVideo = True
-    elif (extLo in UsrCfg.ImgFileExts): 
+    elif (extLo in Cfg.ImgFileExts): 
         isPhoto = True
 
     if (isPhoto or isVideo or isVideoCompanion): #Process only photo and video files
@@ -1110,7 +1165,7 @@ def MoveToDatedDirSingle(ARoot, Fname, AOutputDir, AFileAccessTime, AFileModTime
         newTargetDir, isDifferent = GetTargetDir(subDir, datePrefix, isVideo)
         newCurDir = join(AOutputDir, newTargetDir)
         if isVideo and (not isVideoCompanion):
-            newCurDir, Fname = GetRealVideoDirFname(newCurDir, Fname, stem, datePrefix, UsrCfg.VEncCExt)
+            newCurDir, Fname = GetRealVideoDirFname(newCurDir, Fname, stem, datePrefix, Cfg.VEncCExt)
 
         if (newCurDir == ARoot):
             doMove = False
@@ -1131,7 +1186,7 @@ def MoveToDatedDirSingle(ARoot, Fname, AOutputDir, AFileAccessTime, AFileModTime
             #print targetFile
             doMove2 = True
             if exists(targetFile):
-                if not UsrCfg.VidOverwriteOn:
+                if not Cfg.VidOverwriteOn:
                     #ans = raw_input('Target file already exists, overwrite' + Opt.InputPrompt)
                     print(Opt.Prompt3 + ' Target file \"' + targetFile + '\" already exists. Skip.')
                     RExistingTgtCnt += 1
@@ -1146,7 +1201,7 @@ def MoveToDatedDirSingle(ARoot, Fname, AOutputDir, AFileAccessTime, AFileModTime
                 #Use shutil.move
                 if GetCurrentOs() == 'Linux': #work around shutil error on samba
                     ret = MoveFile(fullname, targetFile)
-                    #if UsrCfg.Verbosity >= 3:
+                    #if Cfg.Verbosity >= 3:
                     if ret[0]: #stdout
                         print(ret[0])
                     if ret[1]: #stderr
@@ -1159,6 +1214,37 @@ def MoveToDatedDirSingle(ARoot, Fname, AOutputDir, AFileAccessTime, AFileModTime
 
     return Fname, RMovedCnt, RExistingTgtCnt, RErrCnt
 
+
+def DetectVCodec(ACodecName=None):
+    """=========================================================================
+    Detect if video codes exists
+    Note: 
+    Arguments:
+      ACodecName: the command name of the codec
+    Return: 
+      True: if the codec is found
+    Example:
+    ========================================================================="""
+    if (ACodecName is None):
+        return False
+    try:
+        extProc = subprocess.Popen([ACodecName], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        info = extProc.communicate() #[0]: stdout, [1]: stderr. The stderr has the info
+        out = info[0]
+        err = info[1]
+        if out.find('Video encoder') >= 0:
+            if err.find('--enable-libx264') >= 0:
+                return True
+            else:
+                print(Opt.AttnPrompt + ' H.264 support not enabled in {}'.format(ACodecName))
+                return False
+        else:
+            print(Opt.AttnPrompt + ' {} not found'.format(ACodecName))
+            return False
+    except:
+        print(Opt.AttnPrompt + ' {} not found'.format(ACodecName))
+        return False
+    
 #============================================================================
 def GetVideoFileInfo(AFullFname=None):
     """=========================================================================
@@ -1321,16 +1407,16 @@ def FnEncodeVideo(ARoot, AFname, AOutputDir, AVideoBinDir, AFileAccessTime=None,
     if transcodeOn: #Note: encoded file must return two filenames
         aCodec = ['-acodec', 'copy']
         vFrameRate = ['-r', frameRate]
-        if UsrCfg.VCodec == 'mpeg4':
+        if Cfg.VCodec == 'mpeg4':
             vCodec = ['-vcodec', 'mpeg4']
-            #UsrCfg.VEncExt2 = '.MP4' #set in the UsrCfg
-            #UsrCfg.VEncExt = '.MKV'           
+            #Cfg.VEncExt2 = '.MP4' #set in the Cfg
+            #Cfg.VEncExt = '.MKV'           
             vQuality = ['-sameq']
             pixFmt = ''
-        elif UsrCfg.VCodec == 'libx264':
+        elif Cfg.VCodec == 'libx264':
             vCodec = ['-vcodec', 'libx264']
-            #UsrCfg.VEncExt2 = '.H24' #set in the UsrCfg
-            #UsrCfg.VEncExt = '.MKV'
+            #Cfg.VEncExt2 = '.H24' #set in the Cfg
+            #Cfg.VEncExt = '.MKV'
             frameH = frameSize[0]
             frameW = frameSize[1]
             if (frameH <= 320) and (frameW <= 240):
@@ -1351,11 +1437,11 @@ def FnEncodeVideo(ARoot, AFname, AOutputDir, AVideoBinDir, AFileAccessTime=None,
                 exit(0)
         else: #unrecognized
             PrintFileInfo()
-            print(Opt.ErrorPrompt + " Unrecognized vcodec: " + UsrCfg.VCodec)
+            print(Opt.ErrorPrompt + " Unrecognized vcodec: " + Cfg.VCodec)
             exit(1)
 
         #convert mov to mkv using ffMpeg:
-        newFname = path + base + UsrCfg.VEncExt2 + UsrCfg.VEncExt
+        newFname = path + base + Cfg.VEncExt2 + Cfg.VEncExt
         outputFname = join(ARoot, newFname)
         #print outputFname
         if os.path.exists(outputFname):
@@ -1367,13 +1453,13 @@ def FnEncodeVideo(ARoot, AFname, AOutputDir, AVideoBinDir, AFileAccessTime=None,
             return (AFname, newFname), RProcessedCnt, RExistingTgtCnt
 
         #Check if encoded file exists in special dir without comment:
-        subDir = ARoot[ARoot.find(UsrCfg.InputDir) + len(UsrCfg.InputDir):]
+        subDir = ARoot[ARoot.find(Cfg.InputDir) + len(Cfg.InputDir):]
         newTargetDir, isDifferent = GetTargetDir(subDir, datePrefix, AIsVideo=True)
-        newTargetDir, newFname = GetRealVideoDirFname(join(AOutputDir, newTargetDir), newFname, stem, datePrefix, UsrCfg.VEncCExt)
+        newTargetDir, newFname = GetRealVideoDirFname(join(AOutputDir, newTargetDir), newFname, stem, datePrefix, Cfg.VEncCExt)
         targetFile = join(newTargetDir, newFname)
-        ##targetFile = GetTargetVidFname(newTargetDir, newFname, stem, UsrCfg.VEncExt2, UsrCfg.VEncExt)
+        ##targetFile = GetTargetVidFname(newTargetDir, newFname, stem, Cfg.VEncExt2, Cfg.VEncExt)
         if exists(targetFile):
-            if not UsrCfg.VidOverwriteOn:
+            if not Cfg.VidOverwriteOn:
                 PrintFileInfo()
                 print(Opt.Prompt3 + ' Destination file \"' + targetFile + '\" already exists. Skip.')
                 RExistingTgtCnt += 1
@@ -1383,12 +1469,12 @@ def FnEncodeVideo(ARoot, AFname, AOutputDir, AVideoBinDir, AFileAccessTime=None,
                 print(Opt.Prompt3 + ' Destination file \"' + targetFile + '\" already exists. To be overwritten.')
                 RExistingTgtCnt += 1
 
-        tmpFile = join(ARoot, path + base + '.tmp' + UsrCfg.VEncExt) #join(ARoot, path + base + '.tmp' + UsrCfg.VEncExt)
+        tmpFile = join(ARoot, path + base + '.tmp' + Cfg.VEncExt) #join(ARoot, path + base + '.tmp' + Cfg.VEncExt)
         if exists(tmpFile):
             os.remove(tmpFile)
 
-        ##cmd = join(Opt.ExePath, Opt.LibDir, UsrCfg.FFMpegDir, UsrCfg.FFMpegCmd)
-        cmd = UsrCfg.FFMpegCmd
+        ##cmd = join(Opt.ExePath, Opt.LibDir, Cfg.FFMpegDir, Cfg.VCodecCmd)
+        cmd = Cfg.VCodecCmd
         #like: ffmpeg -i infile.mov -vcodec mpeg4 -sameq -acodec copy outfile.mkv
         ##cmdlnOpt = vCodec + vQuality + vFrameRate + pixFmt + aCodec ##-vtag XVID
         cmdlnOpt = vCodec + vQuality + vFrameRate + pixFmt + aCodec
@@ -1396,15 +1482,15 @@ def FnEncodeVideo(ARoot, AFname, AOutputDir, AVideoBinDir, AFileAccessTime=None,
         ##cmdln = cmd + ' -i ' + fullname + ' ' + cmdlnOpt + ' ' + tmpFile
         cmdln = [cmd, '-i', fullname] + cmdlnOpt + [tmpFile]
         PrintFileInfo()
-        print(Opt.Prompt3 + ' Converting ' + ext + ' to ' + UsrCfg.VEncExt + ' ...')
+        print(Opt.Prompt3 + ' Converting ' + ext + ' to ' + Cfg.VEncExt + ' ...')
 
         #retStr = subprocess.check_call(cmdln, shell=True) #check_output is new in v2.7. checi_call is new in v2.5
-        #if UsrCfg.Verbosity >= 3:
+        #if Cfg.Verbosity >= 3:
             #print(retStr)
         #extProc = subprocess.Popen(cmdln.split(), stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         extProc = subprocess.Popen(cmdln, stdout=subprocess.PIPE)
         infos = extProc.communicate() #[0]: stdout, [1]: stderr. The stderr has the info
-        if UsrCfg.Verbosity >= 3:
+        if Cfg.Verbosity >= 3:
             print(infos[1])
 
         if not exists(tmpFile):
@@ -1494,7 +1580,7 @@ def ProcBinRedundantVideoFiles(AInputDir=None, AEncodedVidCExts=[], AOrigVidCExt
         return RProcessedCnt, RExistTargetsCnt, RConflictsCnt, RNewCommentCnt, RErrCnt
 
     for root, dirs, files in os.walk(AInputDir):
-        if UsrCfg.Verbosity >= 1:
+        if Cfg.Verbosity >= 1:
             print(Opt.Prompt1 + ' Directory \"' + root + os.sep + '\".')
             print('contains %u non-directory files.' % (len(files)))
             print(' ')
@@ -1502,7 +1588,7 @@ def ProcBinRedundantVideoFiles(AInputDir=None, AEncodedVidCExts=[], AOrigVidCExt
         if root[-1] == os.sep:
             root = root[:-1]
         rootDir, curDir = split(root)
-        if curDir == UsrCfg.VideoDir:
+        if curDir == Cfg.VideoDir:
             rootDir2, parentDir = split(rootDir)
             if (len(parentDir) >= 8) and IsDateDir(parentDir[:8]): #in video dir like /20110405-party/video/
                 GDirInfo = Opt.Prompt1 + ' Dir: \"' + root +'\"'
@@ -1634,7 +1720,7 @@ def ProcSyncVideoFnames(AInputDir=None, ASyncFromCExt=None, ASyncToCExtList=[], 
     Sync the comment of SyncFrom file to the SyncTo files.
     Note: 
     Arguments:
-          ASyncFromCExt: the compond (ext2+ext) ext of a file type. Can be of upper of lower case.
+          ASyncFromCExt: the compound (ext2+ext) ext of a file type. Can be of upper or lower case.
           ssSyncToLatestCommentt: list of compond ext in the order of priority. MUST be in lower cases.
           AStrategy: sync strategy.
               ssSyncToLatestComment: sync to the comment of the first matched target file.
@@ -1654,7 +1740,7 @@ def ProcSyncVideoFnames(AInputDir=None, ASyncFromCExt=None, ASyncToCExtList=[], 
         return 0, 0
 
     for root, dirs, files in os.walk(AInputDir):
-        if UsrCfg.Verbosity >= 1:
+        if Cfg.Verbosity >= 1:
             print(Opt.Prompt1 + ' Directory \"' + root + os.sep + '\".')
             print('contains %u non-directory files.' % (len(files)))
             print(' ')
@@ -1662,7 +1748,7 @@ def ProcSyncVideoFnames(AInputDir=None, ASyncFromCExt=None, ASyncToCExtList=[], 
         if root[-1] == os.sep:
             root = root[:-1]
         rootDir, curDir = split(root)
-        if curDir == UsrCfg.VideoDir:
+        if curDir == Cfg.VideoDir:
             rootDir2, parentDir = split(rootDir)
             if (len(parentDir) >= 8) and IsDateDir(parentDir[:8]): #in video dir like /20110405-party/video/
                 GDirInfo = Opt.Prompt1 + ' Dir: \"' + root +'\"'
@@ -1772,7 +1858,7 @@ def ProcSyncVideoFnames(AInputDir=None, ASyncFromCExt=None, ASyncToCExtList=[], 
 
                     #print:
                     if (len(bestTarget) > 0) or (len(multiTargets) > 0) or (len(errMsg) > 0):
-                        thmFile = aThmFile[1] + ASyncFromCExt #UsrCfg.ThmCExt
+                        thmFile = aThmFile[1] + ASyncFromCExt #Cfg.ThmCExt
                         thmFileFull = join(root, thmFile)
                         if exists(thmFileFull):
                             GFileInfo = GetFileInfoStr(thmFileFull) #Get file info
@@ -1782,7 +1868,7 @@ def ProcSyncVideoFnames(AInputDir=None, ASyncFromCExt=None, ASyncToCExtList=[], 
                             if (len(bestTarget) > 0):
                                 vFullFname = join(root, bestTarget[1] + bestTarget[2])
                                 if exists(vFullFname): #sync thm file name:
-                                    newThmFname = bestTarget[1] + ASyncFromCExt #UsrCfg.ThmCExt #commented fname
+                                    newThmFname = bestTarget[1] + ASyncFromCExt #Cfg.ThmCExt #commented fname
                                     newThmFnameFull = join(root, newThmFname)
                                     if exists(newThmFnameFull):
                                         print(Opt.AttnPrompt + ' Synced THM file exists:  \"' + newThmFname + '\"')
@@ -1829,13 +1915,13 @@ def ProcessFiles(progFunc, AInputDir, AOutputDir, FileType=None, ASkipDatedDir=T
     }
 
     skipThisRoot = False
-    videoBinDirFull = GVideoBinDir #join(UsrCfg.InputDir, UsrCfg.VideoBinDir)
+    videoBinDirFull = GVideoBinDir #join(Cfg.InputDir, Cfg.VideoBinDir)
 
     for root, dirs, files in os.walk(AInputDir):
         #print 'root:', root
         #print 'dirs: ', dirs
         #print 'files: ', files
-        #if UsrCfg.Verbosity >= 1:
+        #if Cfg.Verbosity >= 1:
         GDirInfo = Opt.Prompt1 + ' Dir \"' + root + '\"' #dir info
         #print 'contains', len(files), "non-directory files."
         #print(' ')
@@ -1899,7 +1985,8 @@ def ProcessFiles(progFunc, AInputDir, AOutputDir, FileType=None, ASkipDatedDir=T
             #-------------------------------------------------------------------
             #Function 4: Transcode video files but skip dated dirs
             #Function 5: Transcode video files in all dirs
-            if (progFunc == FuncNo.Auto) or (progFunc == FuncNo.EncodeVid) or (progFunc == FuncNo.EncodeVidAllDirs):
+            if Cfg.VTranscodOn and \
+               ((progFunc == FuncNo.Auto) or (progFunc == FuncNo.EncodeVid) or (progFunc == FuncNo.EncodeVidAllDirs)):
                 name, processedCnt, existingTgtCnt = FnEncodeVideo(root, name, AOutputDir, videoBinDirFull, fileAccessTime, fileModTime)
                 Result['FnEncodeVideo'][0] += processedCnt
                 Result['FnEncodeVideo'][1] += existingTgtCnt
@@ -1927,7 +2014,9 @@ def ProcessFiles(progFunc, AInputDir, AOutputDir, FileType=None, ASkipDatedDir=T
 #:: Body
 #===============================================================================
 if __name__ == "__main__":
-    main()
+    ec = main()
+    if ec == 1:
+        print(Opt.Prompt1 + " User aborted.")  
 
 
 

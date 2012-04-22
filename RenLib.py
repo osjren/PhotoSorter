@@ -2,7 +2,7 @@
 """
 Copyright (C) 2005-2012 Jinsong Ren
 
-For documentation of the project, please go to:
+For documentations of the project, please go to:
 http://osjren.github.com/PhotoSorter
 
 For bugfixes, updates and support, please go to:
