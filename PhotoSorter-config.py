@@ -29,15 +29,15 @@ UserConfig['OutputDirs'] = [
     'test', 
     ]
 
-#Enable transcoding of video files or not:
-UserConfig['EnableVideoTranscoding'] = True 
-#Set to False if you don't have ffmpeg installed.
-#Default to True if not set.
+#Enable transcoding of video files:
+#Uncomment the following and set it to False if you don't have ffmpeg installed 
+#  or don't need video transcoding.
+#UserConfig['EnableVideoTranscoding'] = True #default to True
 
 #Enable writting to a log file:
-UserConfig['EnableLogging'] = True 
-#Set to False if you don't have permission to write to the current directory or don't want it
-#Default to True if not set.
+#Uncomment the following and set it to False if you don't have permission to 
+#  write to the current directory or don't want it.
+#UserConfig['EnableLogging'] = True #default to True
 
 
 
