@@ -1038,7 +1038,7 @@ def FnMoveToDatedDir(ARoot, Fname, AOutputDir, AVideoBinDirFull, AFileAccessTime
                     print(Con.ErrorPrompt + ' File not found. Skip.')
                     RErrCnt += 1
                 if not exists(AVideoBinDirFull): #Create dir if not exists
-                    print(Con.Prompt3 + 'Create new dir \"' + AVideoBinDirFull + '\"')
+                    print(Con.Prompt3 + ' Create new dir \"' + AVideoBinDirFull + '\"')
                     os.makedirs(AVideoBinDirFull)
 
                 targetFile = join(AVideoBinDirFull, origFile)

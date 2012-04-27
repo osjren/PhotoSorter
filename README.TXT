@@ -133,7 +133,7 @@ In this example, you will see something like:
     ... Move to "test/output/20080121/video/"
     ... Sync the acc/mod time to the original
     ... Redundant original file: "20080121-MVI_0730.AVI"
-    ...Create new dir "test/input/#videobin"
+    ... Create new dir "test/input/#videobin"
     ... Move to "test/input/#videobin/"
     ... Sync the acc/mod time to the original
 
@@ -210,17 +210,20 @@ Compiling and Installing ffmpeg
 Here is a short instruction on how to compile and install ffmpeg with H.264 support under Ubuntu. For more information, please see ffmpeg web site (http://ffmpeg.org/).
 
 Install the Dependencies:  
-1. Uninstall x264, libx264-dev, and ffmpeg if they are already installed. Open a terminal and run the following:
+(1) Uninstall x264, libx264-dev, and ffmpeg if they are already installed. Open a terminal and run the following:
+
     sudo apt-get remove ffmpeg x264 libx264-dev
 
-2. Get all of the packages you will need to install FFmpeg and x264 (you may need to enable the universe and multiverse repositories):
+(2) Get all of the packages you will need to install FFmpeg and x264 (you may need to enable the universe and multiverse repositories):
+
     sudo apt-get update
     sudo apt-get install build-essential git-core checkinstall yasm texi2html libfaac-dev \
         libopencore-amrnb-dev libopencore-amrwb-dev libsdl1.2-dev libtheora-dev \
         libvorbis-dev libx11-dev libxfixes-dev libxvidcore-dev zlib1g-dev
 
 Install x264:  
-3. Get the current source files, compile, and install.
+(3) Get the current source files, compile, and install:
+
     cd
     git clone git://git.videolan.org/x264
     cd x264
@@ -230,7 +233,8 @@ Install x264:
         awk -F'[" ]' '/POINT/{print $4"+git"$5}')" --backup=no --deldoc=yes
 
 Install FFmpeg:  
-4. Get the most current source files, compile, and install.
+(4) Get the most current source files, compile, and install:
+
     cd
     git clone git://git.videolan.org/ffmpeg
     cd ffmpeg
@@ -241,7 +245,6 @@ Install FFmpeg:
         --enable-avfilter --enable-vdpau --enable-bzlib \
         --enable-pthreads --enable-zlib --disable-stripping \
         --enable-runtime-cpudetect --enable-swscale --enable-parser=pcm_u8 
-
     make
     sudo checkinstall --pkgname=ffmpeg --pkgversion="5:$(./version.sh)" --backup=no \
         --deldoc=yes --default
