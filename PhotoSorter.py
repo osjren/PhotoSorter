@@ -106,6 +106,8 @@ along with PhotoSorter.  If not, see <http://www.gnu.org/licenses/>.
 #   2012.04.25 - Changed name of a few classes. Added value validity check for configurations
 #                Enhanced a few classes.
 #   2012.04.26 - v2.5.6a. Not fully tested. Will add automated test suite later.
+#   2012.04.28 - Simplified config loading function
+#   2012.06.10 - v2.5.6. Fixed: empty string format field not accepted by Python v2.6
 #
 # Note:
 #   Use python v2.4. "os.walk()" is available only after v2.4.
@@ -131,7 +133,7 @@ class ConstClass:
     """Define constant settings"""
     def __init__(self):
         self.AppName = 'Photo Sorter'
-        self.AppVer = '2.5.6a'
+        self.AppVer = '2.5.6'
         self.AppCopyright = '(C) J Ren'
         self.AppYear = '2005-2012'
 
@@ -168,13 +170,13 @@ def DetectVCodec(ACodecName=None):
             if err.find('--enable-libx264') >= 0:
                 return True
             else:
-                print(Con.AttnPrompt + ' H.264 support not enabled in {}'.format(ACodecName))
+                print(Con.AttnPrompt + ' H.264 support not enabled in {0}'.format(ACodecName))
                 return False
         else:
-            print(Con.AttnPrompt + ' {} not found'.format(ACodecName))
+            print(Con.AttnPrompt + ' {0} not found'.format(ACodecName))
             return False
     except:
-        print(Con.AttnPrompt + ' {} not found'.format(ACodecName))
+        print(Con.AttnPrompt + ' {0} not found'.format(ACodecName))
         return False
     
     
@@ -245,6 +247,8 @@ class CfgClass:
             else: #this will never happen
                 raise Exception('Unsupported codec')
             self.__dict__['VEncCExt'] = self.VEncExt2 + self.VEncExt
+        elif AName == 'VEncExt' or AName == 'VEncExt2':
+            raise AttributeError('Direct assignment is not allowed')
             
         #normal way
         self.__dict__[AName] = AValue
@@ -385,7 +389,7 @@ def main():
             #logf.write('PhotoSorter Log File')
         except IOError as exc:
             Cfg.LoggingOn = False
-            print(Con.ErrorPrompt + ' Unable to write to log file \"{}\". {}'.format(logFname, exc[1]))
+            print(Con.ErrorPrompt + ' Unable to write to log file \"{0}\". {1}'.format(logFname, exc[1]))
             print(Con.AttnPrompt + ' Logging disabled')
         else:
             logf.close()
@@ -477,7 +481,7 @@ def main():
     if Cfg.LoggingOn:
         MyStdout.close()
         MyStderr.close()
-        print(Con.Prompt1 + ' Messages logged to \"{}\"'.format(Cfg.LogFname))
+        print(Con.Prompt1 + ' Messages logged to \"{0}\"'.format(Cfg.LogFname))
 
     return 0
 
@@ -638,17 +642,23 @@ def LoadConfigFile(AFname=None):
     ========================================================================="""
     global Cfg
     
+    transTbl = {
+                 'InputDirs': 'InputDirs',
+                 'OutputDirs': 'OutputDirs',
+                 'EnableVideoTranscoding': 'VTranscodOn',
+                 'EnableLogging': 'LoggingOn',
+               }
+    
     if AFname is None:
         return
     UserConfig = {}
     if exists(AFname):
         execfile(AFname)
+        for key, val in UserConfig.items():
+            attr = transTbl.get(key)
+            if attr is not None:
+                setattr(Cfg, attr, val)
 
-    Cfg.InputDirs = UserConfig.get('InputDirs')
-    Cfg.OutputDirs = UserConfig.get('OutputDirs')
-    Cfg.VTranscodOn = UserConfig.get('EnableVideoTranscoding')
-    Cfg.LoggingOn = UserConfig.get('EnableLogging')
-    
 
 def GetFnameComponents(Fname=None):
     """=========================================================================

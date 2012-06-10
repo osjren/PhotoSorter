@@ -32,12 +32,12 @@ UserConfig['OutputDirs'] = [
 #Enable transcoding of video files:
 #Uncomment the following and set it to False if you don't have ffmpeg installed 
 #  or don't need video transcoding.
-#UserConfig['EnableVideoTranscoding'] = True #default to True
+UserConfig['EnableVideoTranscoding'] = True #default to True
 
 #Enable writting to a log file:
 #Uncomment the following and set it to False if you don't have permission to 
 #  write to the current directory or don't want it.
-#UserConfig['EnableLogging'] = True #default to True
+UserConfig['EnableLogging'] = True #default to True
 
 
 

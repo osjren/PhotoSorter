@@ -22,21 +22,21 @@ What is PhotoSorter
 If the answer is yes, then here comes the PhotoSorter to help. Run it in a terminal and answer a few questions such as the source directory and destination directory and everything is sorted out automatically for you.
 
 A brief history here:  
-Back in 2005, I was so fed up with the task of repeatedly sorting out the large amount of digital photos and videos and the usual mess that I wrote a program to free me from this. That was PhotoSorter. 
+Back in 2005, I was so fed up with the task of repeatedly sorting out the large amount of digital photos and videos and the usual mess that I wrote a program to free me from this. That was the beginning of PhotoSorter. 
 
-PhotoSorter doesn't just do simple things like renaming files, it also does some "smart" things. I "invented" a set of naming conventions for the files and used them in PhotoSorter. Based on these, the file names may have dates, types and annotations and PhotoSorter can synchronise them and resolve conflicts. Over the years PhotoSorter has evolved a lot and now is quite mature. However it does require some installation and configuration to make use of its video transcoding functionality (I will provide the detail when I find time).
+PhotoSorter doesn't just do simple things like renaming files, it also does some smart things, which is achieved by using a set of special naming conventions for files and directories. The file names may have dates, types and annotations and PhotoSorter can synchronise them and resolve conflicts. Over the years PhotoSorter has evolved a lot and now is quite mature. However it does require some installation and configuration to make use of its video transcoding functionality.
 
 
 Supported platforms
 ===================
-Linux or similar with Python 2.4 or above installed. Not tested under Windows or Mac OS.
+Linux or similar with Python 2.6 or above installed. Not tested under Windows or Mac OS. Not tested with Python 3.x.
 
 PhotoSorter is written in pure Python and in theory should run under any platform with Python installed.
 
 
 Installation
 ============
-No installation required. Simply save the files into a directory you like.
+No installation is required. Simply save the files into a directory you like.
 
 
 How to Run PhotoSorter
@@ -66,7 +66,7 @@ Running PhotoSorter will present the following menu:
         (Seperate multiple functions by comma. Enter "q" to quit at any time)
     Which function [0]? 
 
-Normally you only need to choose the Auto mode by type 0 and enter.
+Normally you only need to choose the Auto mode by typing 0 and Enter.
 
 Then you will be asked for the input directory. A list of pre-defined directory shortcuts will be displayed if you have defined them in the user configuration file. 
 With the default user configuration file, you will see the following:
@@ -94,7 +94,7 @@ The same goes for the output directory:
         2-"test/"
     Output dir (0-9 or path)[0=same as input]? 
 
-And similarly you will be asked for confirmation. In the above example entering 1 will lead to this:
+And similarly you will be asked for confirmation. In the above example entering 1 will display to this:
 
     === Contents of the dir: 
     Is the dir "test/output/" correct [y]? 
@@ -164,8 +164,8 @@ In this example, you will see something like:
     ================================================
 
 
-    === Photo Sorter v2.5.6a (C) J Ren 2005-2012
-    === [000-00:00:04] 2012-04-27 12:13:34 AM
+    === Photo Sorter v2.5.6 (C) J Ren 2005-2012
+    === [000-00:00:04] 2012-06-10 12:13:34 AM
     === End.
 
     === Messages logged to "PhotoSorter-log.txt"
@@ -180,16 +180,70 @@ By default, PhotoSort writes the screen messages to a log file named photosorter
 If you don't have ffmpeg installed or it does not support H.264 encoding, you may disable video transcoding using the 'EnableVideoTranscoding' setting in the configuration file. However, this is not strictly required because PhotoSorter detects ffmpeg automatically and warns you if video transcoding is not supported.
 
 
-PhotoSorter Terminology and Conventions
-=======================================
-(to be documented)  
-- date prefix
-- companion file
-- dated directory
-- extension name
-- video directory
-- special directory
-- annotation
+PhotoSorter Terms and Conventions
+=================================
+Assume the original photo and video files are stored under a directory called "input":
+
+input/  
+  P1040220.JPG  
+  P1040221.JPG  
+  P1040267.JPG  
+  P1040267.MOV  
+  MVI_1842.AVI  
+  MVI_1842.THM  
+  MVI_1843.JPG  
+  MVI_1844.JPG  
+
+Then after running PhotoSorter using the "Auto" option, the output directory will have a structure like this, assuming the output directory is called "output":
+
+output/  
+ |- 20120306/  
+ |  |- 20120306-P1040220.JPG  
+ |  |- 20120306-P1040221.JPG  
+ |  |- video/  
+ |  |  |- 20120306-P1040267.THM.JPG  
+ |  |  |- 20120306-P1040267.H24.MKV  
+ |- 20050912/  
+ |  |- 20050912-MVI_1843.JPG  
+ |  |- 20050912-MVI_1844.JPG  
+ |  |- video/  
+ |  |  |- 20050912-MVI_1842.H24.MKV    
+ |  |  |- 20050912-MVI_1842.THM.JPG  
+
+To understand what's going on, it is necessary to explain the following terms and conventions used by PhotoSorter.
+
+- Date prefix  
+  A 8-digit number yyyymmdd representing the year, month and day when the photo was taken or file was created.  
+  PhotoSorter adds a date prefix to the file name and a delimiter "-" between the prefix and the original file name. The date information is extracted from a photo image's embedded EXIF data, or from a file's creation date in cases where EXIF data are not available such as for video files.  
+
+- File name extensions
+  PhotoSorter uses two file name extensions.  
+  The first is just the conventional file name extension, which is referred to as EXT by PhotoSorter. For example, ".MKV" is the EXT of "20050912-MVI_1842.H24.MKV".  
+  The second extension is added by PhotoSorter to further indicate the type of the file where appropriate. It is referred to as EXT2. For example, ".H24" is the EXT2 of "20050912-MVI_1842.H24.MKV".  
+  The following is a list of EXT2s used by PhotoSorter:  
+  -- .THM: The thumbnail image file of a video file
+  -- .H24: The video file's video encoding standard is H.264
+  -- .MP4: The video file's video encoding standard is MPEG4
+
+- Special directory
+  PhotoSorter uses a few special directories and treats them differently from normal directories. They are:  
+  Dated directory  
+  Video directory  
+  VideoBin directory  
+  
+  -- Dated directory
+  A directory starts with a 8-digit number as the name like yyyymmdd representing the year, month and day. PhotoSorter creates a dated directory to store all the photos and videos taken on that day.    
+
+  -- Video directory
+  A video directory is a special directory in a dated directory. The default name of the video directory is "video". PhotoSorter moves all video files into the video directory.
+
+  -- Video bin directory
+  A video bin directory is a special directory to store video files not needed and binned by PhotoSorter. For example, the original file MVI_1842.AVI is binned after it's transcoded into 20050912-MVI_1842.H24.MKV. PhotoSorter NEVER deletes the original video files, and only delete the derived transcoded files when it's asked for. All binned video files are moved to the video bin directory. This is to guarantee the files are not accidentally deleted by mistake or a bug.  
+  The default name for the video bin directory is #videobin and it's located right under the input directory.
+
+- Companion file
+
+- Annotation
 
 
 Video Transcoding (Compression)
@@ -202,7 +256,7 @@ MKV's full name is Matroska Multimedia Container. It is an open standard free co
 
 Unfortunately the ffmpeg output messages have different formats for different versions and PhotoSorter may not work well with some ffmpeg versions.
 
-If transcoding is successful, PhotoSorter will move the original video file into a special directory named #videobin. Otherwise the original video file will stay where it is. PhotoSorter NEVER deletes the original files.
+If transcoding is successful, PhotoSorter will move the original video file into a special directory named #videobin. Otherwise the original video file will stay where it was. PhotoSorter NEVER deletes the original files.
 
 
 Compiling and Installing ffmpeg
@@ -276,14 +330,16 @@ Version History
 2012.04.12 - v2.5.4. Added license terms. Updated EXIF.py to v1.09  
 2012.04.22 - v2.5.5  
 2012.04.26 - v2.5.6a  
+2012.04.26 - v2.5.6. Fixed a bug under Python 2.6  
+
 
 README.txt History
 ==================
 2012.04.12 - Created by Jinsong Ren  
 2012.04.19 - Updated the documentation and license  
 2012.04.22 - Updated the documentation about v2.5.5  
-2012.04.26 - Added the details of the user interaction at running
-             Added the compiling instruction for ffmpeg and x264
-
+2012.04.26 - Added the details of the user interaction at running  
+             Added the compiling instruction for ffmpeg and x264  
+2012.06.10 - Added more detail to PhotoSorter Terms and Conventions  
 
 
